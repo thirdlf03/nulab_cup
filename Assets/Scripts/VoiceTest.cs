@@ -124,12 +124,6 @@ public class VoiceTest : MonoBehaviour
     private void OnStoppedListening()
     {
         Debug.Log("[VoiceTest][Event] OnStoppedListening - Mic stopped");
-        if (isProcessing)
-        {
-            isProcessing = false;
-            isRecording = false;
-            UpdateStatus("Ready");
-        }
     }
 
     private void OnError(string error, string message)
