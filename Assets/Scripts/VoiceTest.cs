@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using TMPro;
@@ -20,9 +21,12 @@ public class VoiceTest : MonoBehaviour
     [SerializeField] private AudioClip startClip;
     [SerializeField] private AudioClip stopClip;
 
+    private const float ProcessingTimeout = 10f;
+
     private AudioSource audioSource;
     private bool isRecording;
     private bool isProcessing;
+    private Coroutine processingTimeoutCoroutine;
 
     private void Awake()
     {
@@ -44,7 +48,8 @@ public class VoiceTest : MonoBehaviour
         voiceExperience.VoiceEvents.OnStoppedListening.AddListener(OnStoppedListening);
         voiceExperience.VoiceEvents.OnError.AddListener(OnError);
         voiceExperience.VoiceEvents.OnResponse.AddListener(OnResponse);
-        // OnPartialTranscription and OnFullTranscription are wired via persistent UnityEvents in the scene
+        voiceExperience.VoiceEvents.OnPartialTranscription.AddListener(OnPartialTranscription);
+        voiceExperience.VoiceEvents.OnFullTranscription.AddListener(OnFullTranscription);
 
         Debug.Log($"[VoiceTest] OnEnable - Active: {voiceExperience.Active}, MicActive: {voiceExperience.MicActive}");
 
@@ -71,7 +76,8 @@ public class VoiceTest : MonoBehaviour
             voiceExperience.VoiceEvents.OnStoppedListening.RemoveListener(OnStoppedListening);
             voiceExperience.VoiceEvents.OnError.RemoveListener(OnError);
             voiceExperience.VoiceEvents.OnResponse.RemoveListener(OnResponse);
-            // OnPartialTranscription and OnFullTranscription are managed via persistent UnityEvents in the scene
+            voiceExperience.VoiceEvents.OnPartialTranscription.RemoveListener(OnPartialTranscription);
+            voiceExperience.VoiceEvents.OnFullTranscription.RemoveListener(OnFullTranscription);
         }
 
         if (toggleAction != null && toggleAction.action != null)
@@ -109,6 +115,7 @@ public class VoiceTest : MonoBehaviour
         voiceExperience.Deactivate();
         isRecording = false;
         isProcessing = true;
+        processingTimeoutCoroutine = StartCoroutine(ProcessingTimeoutRoutine());
         UpdateStatus("Processing...");
         PlayClip(stopClip);
         Debug.Log("[VoiceTest] Deactivate() called, waiting for transcription...");
@@ -130,8 +137,7 @@ public class VoiceTest : MonoBehaviour
     {
         Debug.LogError($"[VoiceTest][Event] OnError - error: {error}, message: {message}");
         UpdateStatus($"<color=red>Error: {error}</color>");
-        isRecording = false;
-        isProcessing = false;
+        ResetProcessingState();
     }
 
     private void OnResponse(WitResponseNode response)
@@ -139,6 +145,7 @@ public class VoiceTest : MonoBehaviour
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         Debug.Log($"[VoiceTest][Event] OnResponse received");
 #endif
+        ResetProcessingState();
     }
 
     // --- Transcription callbacks ---
@@ -150,9 +157,7 @@ public class VoiceTest : MonoBehaviour
 #endif
         if (transcriptionText != null)
             transcriptionText.text = text;
-        UpdateStatus("Ready");
-        isRecording = false;
-        isProcessing = false;
+        ResetProcessingState();
     }
 
     public void OnPartialTranscription(string text)
@@ -162,6 +167,28 @@ public class VoiceTest : MonoBehaviour
 #endif
         if (transcriptionText != null)
             transcriptionText.text = text;
+    }
+
+    private void ResetProcessingState()
+    {
+        isRecording = false;
+        isProcessing = false;
+        if (processingTimeoutCoroutine != null)
+        {
+            StopCoroutine(processingTimeoutCoroutine);
+            processingTimeoutCoroutine = null;
+        }
+        UpdateStatus("Ready");
+    }
+
+    private IEnumerator ProcessingTimeoutRoutine()
+    {
+        yield return new WaitForSeconds(ProcessingTimeout);
+        if (isProcessing)
+        {
+            Debug.LogWarning("[VoiceTest] Processing timed out, resetting state");
+            ResetProcessingState();
+        }
     }
 
     private void UpdateStatus(string msg)
