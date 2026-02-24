@@ -10,9 +10,9 @@ namespace NulabCup
     /// </summary>
     public class ThrowableCube : XRGrabInteractable
     {
-        protected override void OnEnable()
+        protected override void Awake()
         {
-            base.OnEnable();
+            base.Awake();
 
             throwOnDetach = true;
             throwSmoothingDuration = 0.25f;

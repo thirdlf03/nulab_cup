@@ -22,6 +22,7 @@ namespace NulabCup
 
         XRHandSubsystem m_HandSubsystem;
         readonly List<GameObject> m_SpawnedCubes = new();
+        readonly List<XRHandSubsystem> m_HandSubsystems = new();
         float m_LastSpawnTime;
         bool m_WasThumbsUp;
 
@@ -50,10 +51,10 @@ namespace NulabCup
 
         void TryGetHandSubsystem()
         {
-            var subsystems = new List<XRHandSubsystem>();
-            SubsystemManager.GetSubsystems(subsystems);
-            if (subsystems.Count > 0)
-                m_HandSubsystem = subsystems[0];
+            m_HandSubsystems.Clear();
+            SubsystemManager.GetSubsystems(m_HandSubsystems);
+            if (m_HandSubsystems.Count > 0)
+                m_HandSubsystem = m_HandSubsystems[0];
         }
 
         bool IsThumbsUp(XRHand hand)
@@ -98,6 +99,9 @@ namespace NulabCup
 
             if (!hand.GetJoint(XRHandJointID.Palm).TryGetPose(out var palmPose))
                 return;
+
+            // 外部で破棄されたキューブをリストから除去
+            m_SpawnedCubes.RemoveAll(c => c == null);
 
             var spawnPos = palmPose.position + Vector3.up * m_SpawnDistance;
             var cube = Instantiate(m_CubePrefab, spawnPos, Quaternion.identity);
