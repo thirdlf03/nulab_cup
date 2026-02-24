@@ -80,6 +80,9 @@ public class VoiceTest : MonoBehaviour
             toggleAction.action.canceled -= OnReleased;
             toggleAction.action.Disable();
         }
+
+        isRecording = false;
+        isProcessing = false;
     }
 
     private void OnPressed(InputAction.CallbackContext ctx)
@@ -121,6 +124,12 @@ public class VoiceTest : MonoBehaviour
     private void OnStoppedListening()
     {
         Debug.Log("[VoiceTest][Event] OnStoppedListening - Mic stopped");
+        if (isProcessing)
+        {
+            isProcessing = false;
+            isRecording = false;
+            UpdateStatus("Ready");
+        }
     }
 
     private void OnError(string error, string message)
@@ -133,7 +142,9 @@ public class VoiceTest : MonoBehaviour
 
     private void OnResponse(WitResponseNode response)
     {
-        Debug.Log($"[VoiceTest][Event] OnResponse - {response}");
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        Debug.Log($"[VoiceTest][Event] OnResponse received");
+#endif
     }
 
     // --- Transcription callbacks ---
