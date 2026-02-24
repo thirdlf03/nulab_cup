@@ -1194,8 +1194,9 @@ MonoBehaviour:
   m_CubePrefab: {fileID: 5770800395336111461, guid: 276eee3ec64e1417f9ccc4ceb16ee43e, type: 3}
   m_SpawnDistance: 0.3
   m_MaxCubes: 10
-  m_Cooldown: 1
-  m_PinchThreshold: 0.02
+  m_Cooldown: 2
+  m_CurlThreshold: 0.05
+  m_ThumbUpDot: 0.7
 --- !u!4 &1230243598
 Transform:
   m_ObjectHideFlags: 0
