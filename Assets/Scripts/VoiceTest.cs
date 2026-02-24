@@ -22,6 +22,7 @@ public class VoiceTest : MonoBehaviour
 
     private AudioSource audioSource;
     private bool isRecording;
+    private bool isProcessing;
 
     private void Awake()
     {
@@ -43,8 +44,7 @@ public class VoiceTest : MonoBehaviour
         voiceExperience.VoiceEvents.OnStoppedListening.AddListener(OnStoppedListening);
         voiceExperience.VoiceEvents.OnError.AddListener(OnError);
         voiceExperience.VoiceEvents.OnResponse.AddListener(OnResponse);
-        voiceExperience.VoiceEvents.OnPartialTranscription.AddListener(OnPartialTranscription);
-        voiceExperience.VoiceEvents.OnFullTranscription.AddListener(OnFullTranscription);
+        // OnPartialTranscription and OnFullTranscription are wired via persistent UnityEvents in the scene
 
         Debug.Log($"[VoiceTest] OnEnable - Active: {voiceExperience.Active}, MicActive: {voiceExperience.MicActive}");
 
@@ -71,8 +71,7 @@ public class VoiceTest : MonoBehaviour
             voiceExperience.VoiceEvents.OnStoppedListening.RemoveListener(OnStoppedListening);
             voiceExperience.VoiceEvents.OnError.RemoveListener(OnError);
             voiceExperience.VoiceEvents.OnResponse.RemoveListener(OnResponse);
-            voiceExperience.VoiceEvents.OnPartialTranscription.RemoveListener(OnPartialTranscription);
-            voiceExperience.VoiceEvents.OnFullTranscription.RemoveListener(OnFullTranscription);
+            // OnPartialTranscription and OnFullTranscription are managed via persistent UnityEvents in the scene
         }
 
         if (toggleAction != null && toggleAction.action != null)
@@ -85,7 +84,7 @@ public class VoiceTest : MonoBehaviour
 
     private void OnPressed(InputAction.CallbackContext ctx)
     {
-        if (isRecording)
+        if (isRecording || isProcessing)
             return;
 
         Debug.Log($"[VoiceTest] Button pressed. Active: {voiceExperience.Active}, MicActive: {voiceExperience.MicActive}");
@@ -106,6 +105,7 @@ public class VoiceTest : MonoBehaviour
         Debug.Log($"[VoiceTest] Button released. Active: {voiceExperience.Active}, MicActive: {voiceExperience.MicActive}");
         voiceExperience.Deactivate();
         isRecording = false;
+        isProcessing = true;
         UpdateStatus("Processing...");
         PlayClip(stopClip);
         Debug.Log("[VoiceTest] Deactivate() called, waiting for transcription...");
@@ -128,6 +128,7 @@ public class VoiceTest : MonoBehaviour
         Debug.LogError($"[VoiceTest][Event] OnError - error: {error}, message: {message}");
         UpdateStatus($"<color=red>Error: {error}</color>");
         isRecording = false;
+        isProcessing = false;
     }
 
     private void OnResponse(WitResponseNode response)
@@ -139,16 +140,21 @@ public class VoiceTest : MonoBehaviour
 
     public void OnFullTranscription(string text)
     {
-        Debug.Log($"[VoiceTest][Event] FullTranscription: {text}");
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        Debug.Log("[VoiceTest][Event] FullTranscription received");
+#endif
         if (transcriptionText != null)
             transcriptionText.text = text;
         UpdateStatus("Ready");
         isRecording = false;
+        isProcessing = false;
     }
 
     public void OnPartialTranscription(string text)
     {
-        Debug.Log($"[VoiceTest][Event] PartialTranscription: {text}");
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        Debug.Log("[VoiceTest][Event] PartialTranscription received");
+#endif
         if (transcriptionText != null)
             transcriptionText.text = text;
     }
