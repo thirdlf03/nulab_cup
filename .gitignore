@@ -105,8 +105,5 @@ InitTestScene*.unity*
 .vscode/
 *.slnx
 
-# Wit.ai config (contains access tokens)
-Assets/wit.asset
-Assets/wit.asset.meta
-ProjectSettings/wit.config
+# Wit.ai config exports
 ProjectSettings/WitConfigExports/
