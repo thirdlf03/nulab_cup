@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.XR.Hands;
+using Meta.XR.MRUtilityKit;
 
 namespace NulabCup
 {
@@ -22,11 +23,21 @@ namespace NulabCup
         [SerializeField] float m_CurlThreshold = 0.05f;
         [SerializeField] float m_ThumbUpDot = 0.7f;
 
+        [Header("MRUK Spawn")]
+        [SerializeField] bool m_UseMrukFloorHeight = true;
+        [SerializeField, Min(0.5f)] float m_FloorRayStartHeight = 2.5f;
+        [SerializeField, Min(0.5f)] float m_FloorRayDistance = 6.0f;
+        [SerializeField] bool m_DebugFloorRay = false;
+
         XRHandSubsystem m_HandSubsystem;
         readonly List<GameObject> m_SpawnedCubes = new();
         readonly List<XRHandSubsystem> m_HandSubsystems = new();
         float m_LastSpawnTime;
         bool m_WasThumbsUp;
+
+        static readonly LabelFilter s_FloorFilter = new(
+            MRUKAnchor.SceneLabels.FLOOR | MRUKAnchor.SceneLabels.GLOBAL_MESH,
+            MRUKAnchor.ComponentType.All);
 
         void Update()
         {
@@ -107,7 +118,15 @@ namespace NulabCup
 
             var targetPos = palmPose.position + Vector3.up * m_TargetHeightOffset;
             var horizontalOffset = Random.insideUnitCircle * m_RainRadius;
-            var spawnPos = targetPos + Vector3.up * m_RainHeight + new Vector3(horizontalOffset.x, 0f, horizontalOffset.y);
+            var spawnXZ = targetPos + new Vector3(horizontalOffset.x, 0f, horizontalOffset.y);
+
+            var baseHeight = targetPos.y;
+            if (m_UseMrukFloorHeight && TryGetFloorHeight(spawnXZ, out var floorY))
+            {
+                baseHeight = floorY + m_TargetHeightOffset;
+            }
+
+            var spawnPos = new Vector3(spawnXZ.x, baseHeight + m_RainHeight, spawnXZ.z);
             var cube = Instantiate(m_CubePrefab, spawnPos, Quaternion.identity);
 
             if (cube.TryGetComponent<Rigidbody>(out var rb))
@@ -131,6 +150,37 @@ namespace NulabCup
                 if (oldest != null)
                     Destroy(oldest);
             }
+        }
+
+        bool TryGetFloorHeight(Vector3 worldPosition, out float floorY)
+        {
+            floorY = 0f;
+
+            var mruk = MRUK.Instance;
+            if (mruk == null || !mruk.IsInitialized)
+                return false;
+
+            var room = mruk.GetCurrentRoom();
+            if (room == null && mruk.Rooms.Count > 0)
+                room = mruk.Rooms[0];
+            if (room == null)
+                return false;
+
+            var rayOrigin = worldPosition + Vector3.up * m_FloorRayStartHeight;
+            var ray = new Ray(rayOrigin, Vector3.down);
+
+            if (!room.Raycast(ray, m_FloorRayDistance, s_FloorFilter, out var hit, out var _))
+            {
+                if (m_DebugFloorRay)
+                    Debug.DrawRay(rayOrigin, Vector3.down * m_FloorRayDistance, Color.red, 0.15f);
+                return false;
+            }
+
+            if (m_DebugFloorRay)
+                Debug.DrawLine(rayOrigin, hit.point, Color.cyan, 0.15f);
+
+            floorY = hit.point.y;
+            return true;
         }
     }
 }
