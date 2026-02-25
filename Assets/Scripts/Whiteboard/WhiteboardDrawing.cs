@@ -8,9 +8,7 @@ using UnityEngine.XR.Hands;
 namespace NulabCup.Whiteboard
 {
     /// <summary>
-    /// Handles whiteboard drawing via XR Hands (pinch gesture) and controllers (trigger).
-    /// Combines pointer raycasting and drawing state management in one component.
-    /// Replaces MRMotifs' PointerDrawingMotif + PointerHandlerMotif with XR Hands / Input System.
+    /// Handles whiteboard drawing via XR Hands (index fingertip touch) and controllers (trigger).
     /// </summary>
     public class WhiteboardDrawing : MonoBehaviour
     {
@@ -25,7 +23,8 @@ namespace NulabCup.Whiteboard
         [SerializeField] private int m_BrushRadius = 6;
 
         [Header("Hand Tracking")]
-        [SerializeField] private float m_PinchThreshold = 0.02f;
+        [SerializeField] private float m_FingertipTouchRadius = 0.015f;
+        [SerializeField] private float m_FingertipTouchDepth = 0.03f;
 
         [Header("Controller Input")]
         [SerializeField] private InputActionReference m_LeftTriggerAction;
@@ -50,9 +49,9 @@ namespace NulabCup.Whiteboard
         private Vector2 m_LeftLastUV;
         private Vector2 m_RightLastUV;
 
-        // Per-hand pinch state tracking (for edge detection)
-        private bool m_LeftWasPinching;
-        private bool m_RightWasPinching;
+        // Per-hand touch state tracking (for edge detection)
+        private bool m_LeftWasTouching;
+        private bool m_RightWasTouching;
 
         private void Start()
         {
@@ -80,7 +79,7 @@ namespace NulabCup.Whiteboard
                 isLeft: true,
                 ref m_LeftDrawing,
                 ref m_LeftLastUV,
-                ref m_LeftWasPinching
+                ref m_LeftWasTouching
             );
 
             // Process right hand/controller
@@ -88,7 +87,7 @@ namespace NulabCup.Whiteboard
                 isLeft: false,
                 ref m_RightDrawing,
                 ref m_RightLastUV,
-                ref m_RightWasPinching
+                ref m_RightWasTouching
             );
         }
 
@@ -111,38 +110,37 @@ namespace NulabCup.Whiteboard
             bool isLeft,
             ref bool isDrawing,
             ref Vector2 lastUV,
-            ref bool wasPinching)
+            ref bool wasTouching)
         {
             var source = GetActiveSource(isLeft);
-            var ray = GetPointerRay(isLeft, source);
 
-            if (!ray.HasValue)
+            if (source == InputSource.Hand)
             {
-                if (isDrawing)
+                if (!TryGetFingerTouchPoint(isLeft, out var hitPoint))
                 {
-                    isDrawing = false;
-                    InteractionStateManager.Instance.ResetMode(InteractionMode.DrawingPointer);
+                    wasTouching = false;
+                    StopDrawingIfNeeded(ref isDrawing);
+                    return;
                 }
+
+                var inputDown = !wasTouching;
+                const bool inputHeld = true;
+                const bool inputUp = false;
+                wasTouching = true;
+                HandleDrawing(hitPoint, inputDown, inputHeld, inputUp, ref isDrawing, ref lastUV);
                 return;
             }
 
-            // Raycast to whiteboard
-            if (!Physics.Raycast(ray.Value, out var hit, Mathf.Infinity, m_WhiteboardLayer))
+            wasTouching = false;
+            var ray = GetControllerRay(isLeft);
+            if (!ray.HasValue || !Physics.Raycast(ray.Value, out var hit, Mathf.Infinity, m_WhiteboardLayer))
             {
-                if (isDrawing)
-                {
-                    isDrawing = false;
-                    InteractionStateManager.Instance.ResetMode(InteractionMode.DrawingPointer);
-                }
+                StopDrawingIfNeeded(ref isDrawing);
                 return;
             }
 
-            // Get input state
-            GetInputState(isLeft, source, ref wasPinching,
-                out var inputDown, out var inputHeld, out var inputUp);
-
-            // Drawing state machine
-            HandleDrawing(hit.point, inputDown, inputHeld, inputUp, ref isDrawing, ref lastUV);
+            GetControllerInputState(isLeft, out var controllerDown, out var controllerHeld, out var controllerUp);
+            HandleDrawing(hit.point, controllerDown, controllerHeld, controllerUp, ref isDrawing, ref lastUV);
         }
 
         private InputSource GetActiveSource(bool isLeft)
@@ -156,41 +154,67 @@ namespace NulabCup.Whiteboard
             return hand.isTracked ? InputSource.Hand : InputSource.Controller;
         }
 
-        private Ray? GetPointerRay(bool isLeft, InputSource source)
+        private bool TryGetFingerTouchPoint(bool isLeft, out Vector3 hitPoint)
         {
-            if (source == InputSource.Hand)
+            hitPoint = default;
+
+            if (!TryGetIndexPoses(isLeft, out var tipPose, out var proximalPose))
             {
-                return GetHandPointerRay(isLeft);
+                return false;
             }
 
-            return GetControllerRay(isLeft);
+            var direction = (tipPose.position - proximalPose.position).normalized;
+            if (direction.sqrMagnitude < 0.0001f)
+            {
+                return false;
+            }
+
+            var backOffset = direction * (m_FingertipTouchDepth * 0.5f);
+            var rayOrigin = tipPose.position - backOffset;
+
+            if (Physics.SphereCast(
+                    rayOrigin,
+                    m_FingertipTouchRadius,
+                    direction,
+                    out var hit,
+                    m_FingertipTouchDepth,
+                    m_WhiteboardLayer,
+                    QueryTriggerInteraction.Ignore))
+            {
+                hitPoint = hit.point;
+                return true;
+            }
+
+            return false;
         }
 
-        private Ray? GetHandPointerRay(bool isLeft)
+        private bool TryGetIndexPoses(bool isLeft, out Pose tipPose, out Pose proximalPose)
         {
+            tipPose = default;
+            proximalPose = default;
+
             if (m_HandSubsystem == null)
             {
-                return null;
+                return false;
             }
 
             var hand = isLeft ? m_HandSubsystem.leftHand : m_HandSubsystem.rightHand;
             if (!hand.isTracked)
             {
-                return null;
+                return false;
             }
 
-            if (!hand.GetJoint(XRHandJointID.IndexProximal).TryGetPose(out var proxPose))
+            if (!hand.GetJoint(XRHandJointID.IndexTip).TryGetPose(out tipPose))
             {
-                return null;
-            }
-            if (!hand.GetJoint(XRHandJointID.IndexTip).TryGetPose(out var tipPose))
-            {
-                return null;
+                return false;
             }
 
-            var origin = tipPose.position;
-            var direction = (tipPose.position - proxPose.position).normalized;
-            return new Ray(origin, direction);
+            if (!hand.GetJoint(XRHandJointID.IndexProximal).TryGetPose(out proximalPose))
+            {
+                return false;
+            }
+
+            return true;
         }
 
         private Ray? GetControllerRay(bool isLeft)
@@ -204,62 +228,31 @@ namespace NulabCup.Whiteboard
             return new Ray(rayOrigin.position, rayOrigin.forward);
         }
 
-        private void GetInputState(
-            bool isLeft,
-            InputSource source,
-            ref bool wasPinching,
-            out bool inputDown,
-            out bool inputHeld,
-            out bool inputUp)
+        private void GetControllerInputState(bool isLeft, out bool inputDown, out bool inputHeld, out bool inputUp)
         {
-            if (source == InputSource.Hand)
+            var action = isLeft ? m_LeftTriggerAction : m_RightTriggerAction;
+            if (action == null || action.action == null)
             {
-                var isPinching = IsPinching(isLeft);
-                inputDown = isPinching && !wasPinching;
-                inputHeld = isPinching;
-                inputUp = !isPinching && wasPinching;
-                wasPinching = isPinching;
+                inputDown = false;
+                inputHeld = false;
+                inputUp = false;
+                return;
             }
-            else
-            {
-                var action = isLeft ? m_LeftTriggerAction : m_RightTriggerAction;
-                if (action == null || action.action == null)
-                {
-                    inputDown = false;
-                    inputHeld = false;
-                    inputUp = false;
-                    return;
-                }
 
-                inputDown = action.action.WasPressedThisFrame();
-                inputHeld = action.action.IsPressed();
-                inputUp = action.action.WasReleasedThisFrame();
-            }
+            inputDown = action.action.WasPressedThisFrame();
+            inputHeld = action.action.IsPressed();
+            inputUp = action.action.WasReleasedThisFrame();
         }
 
-        private bool IsPinching(bool isLeft)
+        private void StopDrawingIfNeeded(ref bool isDrawing)
         {
-            if (m_HandSubsystem == null)
+            if (!isDrawing)
             {
-                return false;
+                return;
             }
 
-            var hand = isLeft ? m_HandSubsystem.leftHand : m_HandSubsystem.rightHand;
-            if (!hand.isTracked)
-            {
-                return false;
-            }
-
-            if (!hand.GetJoint(XRHandJointID.ThumbTip).TryGetPose(out var thumbPose))
-            {
-                return false;
-            }
-            if (!hand.GetJoint(XRHandJointID.IndexTip).TryGetPose(out var indexPose))
-            {
-                return false;
-            }
-
-            return Vector3.Distance(thumbPose.position, indexPose.position) < m_PinchThreshold;
+            isDrawing = false;
+            InteractionStateManager.Instance.ResetMode(InteractionMode.DrawingPointer);
         }
 
         private void HandleDrawing(

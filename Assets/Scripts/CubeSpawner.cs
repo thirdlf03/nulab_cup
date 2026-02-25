@@ -12,7 +12,9 @@ namespace NulabCup
     {
         [Header("Spawn Settings")]
         [SerializeField] GameObject m_CubePrefab;
-        [SerializeField] float m_SpawnDistance = 0.3f;
+        [SerializeField] float m_TargetHeightOffset = 0.3f;
+        [SerializeField] float m_RainHeight = 2.0f;
+        [SerializeField] float m_RainRadius = 0.25f;
         [SerializeField] int m_MaxCubes = 10;
         [SerializeField] float m_Cooldown = 2.0f;
 
@@ -103,8 +105,23 @@ namespace NulabCup
             // 外部で破棄されたキューブをリストから除去
             m_SpawnedCubes.RemoveAll(c => c == null);
 
-            var spawnPos = palmPose.position + Vector3.up * m_SpawnDistance;
+            var targetPos = palmPose.position + Vector3.up * m_TargetHeightOffset;
+            var horizontalOffset = Random.insideUnitCircle * m_RainRadius;
+            var spawnPos = targetPos + Vector3.up * m_RainHeight + new Vector3(horizontalOffset.x, 0f, horizontalOffset.y);
             var cube = Instantiate(m_CubePrefab, spawnPos, Quaternion.identity);
+
+            if (cube.TryGetComponent<Rigidbody>(out var rb))
+            {
+#if UNITY_6000_0_OR_NEWER
+                rb.linearVelocity = Vector3.zero;
+#else
+#pragma warning disable CS0618
+                rb.velocity = Vector3.zero;
+#pragma warning restore CS0618
+#endif
+                rb.angularVelocity = Vector3.zero;
+            }
+
             m_SpawnedCubes.Add(cube);
 
             while (m_SpawnedCubes.Count > m_MaxCubes)
