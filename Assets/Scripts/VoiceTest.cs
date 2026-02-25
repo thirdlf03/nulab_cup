@@ -6,11 +6,19 @@ using Meta.WitAi;
 using Meta.WitAi.Events;
 using Meta.WitAi.Json;
 using Oculus.Voice;
+using NulabCup.Debugging;
 
 public class VoiceTest : MonoBehaviour
 {
+    private enum VoiceInputMode
+    {
+        LeftControllerYButton = 0,
+        ActionReference = 1
+    }
+
     [Header("Voice")]
     [SerializeField] private AppVoiceExperience voiceExperience;
+    [SerializeField] private VoiceInputMode inputMode = VoiceInputMode.LeftControllerYButton;
     [SerializeField] private InputActionReference toggleAction;
 
     [Header("UI")]
@@ -27,16 +35,22 @@ public class VoiceTest : MonoBehaviour
     private bool isRecording;
     private bool isProcessing;
     private Coroutine processingTimeoutCoroutine;
+    private InputAction activeInputAction;
+    private InputAction runtimeYButtonAction;
 
     private void Awake()
     {
+        StartupProfiler.LogMilestone("VoiceTest", "Awake() BEGIN");
         audioSource = gameObject.AddComponent<AudioSource>();
         audioSource.playOnAwake = false;
         audioSource.spatialBlend = 0f;
+        StartupProfiler.LogMilestone("VoiceTest", "Awake() END");
     }
 
     private void OnEnable()
     {
+        StartupProfiler.LogMilestone("VoiceTest", "OnEnable() BEGIN");
+
         if (voiceExperience == null)
         {
             Debug.LogError("[VoiceTest] voiceExperience is NULL! Assign it in the Inspector.");
@@ -53,19 +67,21 @@ public class VoiceTest : MonoBehaviour
 
         Debug.Log($"[VoiceTest] OnEnable - Active: {voiceExperience.Active}, MicActive: {voiceExperience.MicActive}");
 
-        if (toggleAction != null && toggleAction.action != null)
+        activeInputAction = ResolveInputAction();
+        if (activeInputAction != null)
         {
-            toggleAction.action.Enable();
-            toggleAction.action.performed += OnPressed;
-            toggleAction.action.canceled += OnReleased;
-            Debug.Log($"[VoiceTest] Input action bound: {toggleAction.action.name}");
+            activeInputAction.Enable();
+            activeInputAction.performed += OnPressed;
+            activeInputAction.canceled += OnReleased;
+            Debug.Log($"[VoiceTest] Input action bound: {activeInputAction.name} (mode: {inputMode})");
         }
         else
         {
-            Debug.LogWarning("[VoiceTest] toggleAction is null or has no action!");
+            Debug.LogWarning("[VoiceTest] No valid input action found for recording.");
         }
 
         UpdateStatus("Ready");
+        StartupProfiler.LogMilestone("VoiceTest", "OnEnable() END");
     }
 
     private void OnDisable()
@@ -80,11 +96,17 @@ public class VoiceTest : MonoBehaviour
             voiceExperience.VoiceEvents.OnFullTranscription.RemoveListener(OnFullTranscription);
         }
 
-        if (toggleAction != null && toggleAction.action != null)
+        if (activeInputAction != null)
         {
-            toggleAction.action.performed -= OnPressed;
-            toggleAction.action.canceled -= OnReleased;
-            toggleAction.action.Disable();
+            activeInputAction.performed -= OnPressed;
+            activeInputAction.canceled -= OnReleased;
+
+            if (activeInputAction == runtimeYButtonAction)
+            {
+                activeInputAction.Disable();
+            }
+
+            activeInputAction = null;
         }
 
         isRecording = false;
@@ -201,5 +223,36 @@ public class VoiceTest : MonoBehaviour
     {
         if (clip != null && audioSource != null)
             audioSource.PlayOneShot(clip);
+    }
+
+    private InputAction ResolveInputAction()
+    {
+        if (inputMode == VoiceInputMode.ActionReference)
+        {
+            if (toggleAction != null && toggleAction.action != null)
+            {
+                return toggleAction.action;
+            }
+
+            Debug.LogWarning("[VoiceTest] inputMode is ActionReference but toggleAction is not set. Falling back to Left Y button.");
+        }
+
+        if (runtimeYButtonAction == null)
+        {
+            // Quest left Y is typically exposed as LeftHand secondaryButton.
+            runtimeYButtonAction = new InputAction("VoiceRecordLeftY", InputActionType.Button);
+            runtimeYButtonAction.AddBinding("<XRController>{LeftHand}/secondaryButton");
+        }
+
+        return runtimeYButtonAction;
+    }
+
+    private void OnDestroy()
+    {
+        if (runtimeYButtonAction != null)
+        {
+            runtimeYButtonAction.Dispose();
+            runtimeYButtonAction = null;
+        }
     }
 }
