@@ -11,7 +11,7 @@ using Newtonsoft.Json.Linq;
 
 /// <summary>
 /// GUIビルド時: IPreprocessBuild/IPostprocessBuild で自動的にトークンを注入・クリア
-/// CI/CD時: -executeMethod CIBuilder.BuildProject -witToken "xxx" -witServerToken "yyy" で呼び出す
+/// CI/CD時: -executeMethod CIBuilder.BuildProject -witToken "xxx" -witServerToken "yyy" -photonAppId "zzz" で呼び出す
 /// </summary>
 public class CIBuilder : IPreprocessBuildWithReport, IPostprocessBuildWithReport
 {
@@ -23,8 +23,20 @@ public class CIBuilder : IPreprocessBuildWithReport, IPostprocessBuildWithReport
     };
 
     private static readonly string WitConfigPath = "ProjectSettings/wit.config";
+    private static readonly string PhotonAppSettingsPath = "Assets/Photon/Fusion/Resources/PhotonAppSettings.asset";
 
     // --- トークン解決 ---
+
+    private static string ResolvePhotonAppId()
+    {
+        string id = GetCommandLineArg("-photonAppId");
+        if (!string.IsNullOrEmpty(id)) return id;
+
+        id = Environment.GetEnvironmentVariable("PHOTON_APP_ID");
+        if (!string.IsNullOrEmpty(id)) return id;
+
+        return null;
+    }
 
     private static string ResolveClientToken()
     {
@@ -63,12 +75,19 @@ public class CIBuilder : IPreprocessBuildWithReport, IPostprocessBuildWithReport
             InjectServerToken(serverToken);
         else
             Debug.LogWarning("[CIBuilder] Server Token 未設定。-witServerToken 引数または WIT_SERVER_TOKEN 環境変数を確認してください。");
+
+        string photonAppId = ResolvePhotonAppId();
+        if (!string.IsNullOrEmpty(photonAppId))
+            InjectPhotonAppId(photonAppId);
+        else
+            Debug.LogWarning("[CIBuilder] Photon App ID 未設定。-photonAppId 引数または PHOTON_APP_ID 環境変数を確認してください。");
     }
 
     public void OnPostprocessBuild(BuildReport report)
     {
         InjectClientToken(string.Empty);
         InjectServerToken(string.Empty);
+        InjectPhotonAppId(string.Empty);
     }
 
     // --- CI/CD用 ---
@@ -85,9 +104,13 @@ public class CIBuilder : IPreprocessBuildWithReport, IPostprocessBuildWithReport
             return;
         }
 
+        string photonAppId = ResolvePhotonAppId();
+
         InjectClientToken(clientToken);
         if (!string.IsNullOrEmpty(serverToken))
             InjectServerToken(serverToken);
+        if (!string.IsNullOrEmpty(photonAppId))
+            InjectPhotonAppId(photonAppId);
 
         try
         {
@@ -115,6 +138,7 @@ public class CIBuilder : IPreprocessBuildWithReport, IPostprocessBuildWithReport
         {
             InjectClientToken(string.Empty);
             InjectServerToken(string.Empty);
+            InjectPhotonAppId(string.Empty);
         }
     }
 
@@ -144,6 +168,14 @@ public class CIBuilder : IPreprocessBuildWithReport, IPostprocessBuildWithReport
             InjectServerToken(serverToken);
             Debug.Log("[CIBuilder] Server Token 注入テスト成功");
             InjectServerToken(string.Empty);
+        }
+
+        string photonAppId = ResolvePhotonAppId();
+        if (!string.IsNullOrEmpty(photonAppId))
+        {
+            InjectPhotonAppId(photonAppId);
+            Debug.Log("[CIBuilder] Photon App ID 注入テスト成功");
+            InjectPhotonAppId(string.Empty);
         }
 
         Debug.Log("[CIBuilder] テスト完了、クリア済み。");
@@ -203,6 +235,21 @@ public class CIBuilder : IPreprocessBuildWithReport, IPostprocessBuildWithReport
 
         File.WriteAllText(WitConfigPath, config.ToString(Formatting.None));
         Debug.Log($"[CIBuilder] Server Token: {(string.IsNullOrEmpty(token) ? "クリア済み" : "注入済み")}");
+    }
+
+    private static void InjectPhotonAppId(string appId)
+    {
+        var settings = AssetDatabase.LoadAssetAtPath<Fusion.Photon.Realtime.PhotonAppSettings>(PhotonAppSettingsPath);
+        if (settings == null)
+        {
+            Debug.LogWarning($"[CIBuilder] {PhotonAppSettingsPath} が見つかりません。スキップします。");
+            return;
+        }
+
+        settings.AppSettings.AppIdFusion = appId;
+        EditorUtility.SetDirty(settings);
+        AssetDatabase.SaveAssets();
+        Debug.Log($"[CIBuilder] Photon App ID: {(string.IsNullOrEmpty(appId) ? "クリア済み" : "注入済み")}");
     }
 }
 #endif
