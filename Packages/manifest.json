@@ -1,14 +1,9 @@
 {
-  "scopedRegistries": [
-    {
-      "name": "Meta XR SDK",
-      "url": "https://npm.developer.oculus.com/",
-      "scopes": [
-        "com.meta.xr"
-      ]
-    }
-  ],
+  "scopedRegistries": [],
   "dependencies": {
+    "com.meta.xr.sdk.all": "85.0.0",
+    "com.meta.xr.sdk.core": "85.0.0",
+    "com.meta.xr.sdk.interaction.ovr": "85.0.0",
     "com.meta.xr.sdk.voice": "85.0.0",
     "com.unity.feature.development": "1.0.2",
     "com.unity.ide.rider": "3.0.39",
