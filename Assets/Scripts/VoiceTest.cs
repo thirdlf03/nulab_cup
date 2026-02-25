@@ -6,6 +6,7 @@ using Meta.WitAi;
 using Meta.WitAi.Events;
 using Meta.WitAi.Json;
 using Oculus.Voice;
+using NulabCup.Debugging;
 
 public class VoiceTest : MonoBehaviour
 {
@@ -30,13 +31,17 @@ public class VoiceTest : MonoBehaviour
 
     private void Awake()
     {
+        StartupProfiler.LogMilestone("VoiceTest", "Awake() BEGIN");
         audioSource = gameObject.AddComponent<AudioSource>();
         audioSource.playOnAwake = false;
         audioSource.spatialBlend = 0f;
+        StartupProfiler.LogMilestone("VoiceTest", "Awake() END");
     }
 
     private void OnEnable()
     {
+        StartupProfiler.LogMilestone("VoiceTest", "OnEnable() BEGIN");
+
         if (voiceExperience == null)
         {
             Debug.LogError("[VoiceTest] voiceExperience is NULL! Assign it in the Inspector.");
@@ -66,6 +71,7 @@ public class VoiceTest : MonoBehaviour
         }
 
         UpdateStatus("Ready");
+        StartupProfiler.LogMilestone("VoiceTest", "OnEnable() END");
     }
 
     private void OnDisable()

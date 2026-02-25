@@ -4,6 +4,7 @@ using Fusion;
 using Fusion.Sockets;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using NulabCup.Debugging;
 
 namespace NulabCup.Networking
 {
@@ -26,16 +27,21 @@ namespace NulabCup.Networking
 
         public async void StartSession(string sessionName)
         {
+            StartupProfiler.LogMilestone("FusionBootstrap", $"StartSession BEGIN ({sessionName})");
+
             if (m_Runner != null)
             {
                 Debug.LogWarning($"{Tag} Session already exists. Shutting down first.");
+                StartupProfiler.LogMilestone("FusionBootstrap", "Shutdown existing runner BEGIN");
                 await m_Runner.Shutdown();
+                StartupProfiler.LogMilestone("FusionBootstrap", "Shutdown existing runner END");
             }
 
             m_Runner = gameObject.AddComponent<NetworkRunner>();
             m_Runner.ProvideInput = false;
 
             Debug.Log($"{Tag} Starting Fusion session: {sessionName}");
+            StartupProfiler.LogMilestone("FusionBootstrap", "StartGame BEGIN");
 
             var result = await m_Runner.StartGame(new StartGameArgs
             {
@@ -44,6 +50,8 @@ namespace NulabCup.Networking
                 Scene = SceneRef.FromIndex(SceneManager.GetActiveScene().buildIndex),
                 SceneManager = gameObject.AddComponent<NetworkSceneManagerDefault>()
             });
+
+            StartupProfiler.LogMilestone("FusionBootstrap", $"StartGame END (ok={result.Ok})");
 
             if (result.Ok)
             {

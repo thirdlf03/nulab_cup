@@ -3,25 +3,24 @@ using System.Text;
 using UnityEngine;
 using UnityEngine.XR.OpenXR;
 using UnityEngine.XR.OpenXR.Features.Meta;
+using NulabCup.Debugging;
 
 namespace NulabCup.Networking
 {
     /// <summary>
     /// Colocation Discovery と Fusion セッション参加を橋渡しする。
-    /// 起動時に Discovery を開始し、タイムアウト内に他のデバイスを発見できれば
-    /// そのセッションに参加、できなければ Host としてセッションを作成し Advertisement を開始する。
+    /// 起動時に自動で Discovery を開始し、他デバイスを発見すればそのセッションに参加する。
+    /// デバッグ用に ForceHost() で強制的に Host としてセッションを作成できる。
     /// </summary>
     public class ColocationBridge : MonoBehaviour
     {
         const string Tag = "[ColocationBridge]";
         const string SessionPrefix = "NulabCup_";
-        const float DiscoveryTimeout = 5f;
-
         [SerializeField] FusionBootstrap m_FusionBootstrap;
 
         ColocationDiscoveryFeature m_Feature;
-        float m_DiscoveryStartTime;
         bool m_Resolved;
+        bool m_Initialized;
 
         public enum BridgeState
         {
@@ -33,8 +32,10 @@ namespace NulabCup.Networking
 
         public BridgeState CurrentState { get; private set; } = BridgeState.Idle;
 
-        async void Start()
+        void Start()
         {
+            StartupProfiler.LogMilestone("ColocationBridge", "Start() BEGIN");
+
             if (m_FusionBootstrap == null)
             {
                 m_FusionBootstrap = GetComponent<FusionBootstrap>();
@@ -47,7 +48,41 @@ namespace NulabCup.Networking
 
             m_FusionBootstrap.OnJoinedSession += () => CurrentState = BridgeState.Connected;
 
+            StartupProfiler.LogMilestone("ColocationBridge", "OpenXRSettings.GetFeature BEGIN");
             m_Feature = OpenXRSettings.Instance?.GetFeature<ColocationDiscoveryFeature>();
+            StartupProfiler.LogMilestone("ColocationBridge", $"OpenXRSettings.GetFeature END (found={m_Feature != null}, enabled={m_Feature?.enabled})");
+
+            if (m_Feature != null && m_Feature.enabled)
+            {
+                m_Feature.messageDiscovered += OnMessageDiscovered;
+            }
+
+            m_Initialized = true;
+            Debug.Log($"{Tag} Initialized. Auto-starting discovery.");
+            StartupProfiler.LogMilestone("ColocationBridge", "Start() END — auto-starting discovery");
+
+            BeginDiscovery();
+        }
+
+        /// <summary>
+        /// Discovery を開始する。Start() から自動呼び出しされる。
+        /// </summary>
+        public async void BeginDiscovery()
+        {
+            if (!m_Initialized)
+            {
+                Debug.LogWarning($"{Tag} Not initialized yet.");
+                return;
+            }
+
+            if (CurrentState != BridgeState.Idle)
+            {
+                Debug.LogWarning($"{Tag} Already in state {CurrentState}, ignoring BeginDiscovery.");
+                return;
+            }
+
+            StartupProfiler.LogMilestone("ColocationBridge", "BeginDiscovery() called from UI");
+
             if (m_Feature == null || !m_Feature.enabled)
             {
                 Debug.LogWarning($"{Tag} ColocationDiscoveryFeature not available. Starting as host without colocation.");
@@ -55,13 +90,14 @@ namespace NulabCup.Networking
                 return;
             }
 
-            m_Feature.messageDiscovered += OnMessageDiscovered;
-
             Debug.Log($"{Tag} Starting colocation discovery...");
             CurrentState = BridgeState.Discovering;
-            m_DiscoveryStartTime = Time.time;
+            m_Resolved = false;
 
+            StartupProfiler.LogMilestone("ColocationBridge", "TryStartDiscoveryAsync BEGIN");
             var result = await m_Feature.TryStartDiscoveryAsync();
+            StartupProfiler.LogMilestone("ColocationBridge", $"TryStartDiscoveryAsync END (success={result.IsSuccess()})");
+
             if (!result.IsSuccess())
             {
                 Debug.LogWarning($"{Tag} Failed to start discovery. Starting as host.");
@@ -69,17 +105,20 @@ namespace NulabCup.Networking
             }
         }
 
-        void Update()
+        /// <summary>
+        /// デバッグ用：Discovery を強制停止して Host になる。
+        /// </summary>
+        public void ForceHost()
         {
-            if (CurrentState != BridgeState.Discovering || m_Resolved)
-                return;
-
-            if (Time.time - m_DiscoveryStartTime >= DiscoveryTimeout)
+            if (CurrentState == BridgeState.Connected || CurrentState == BridgeState.Advertising)
             {
-                Debug.Log($"{Tag} Discovery timed out, becoming host.");
-                m_Resolved = true;
-                StopDiscoveryAndBecomeHost();
+                Debug.LogWarning($"{Tag} Already connected/advertising, ignoring ForceHost.");
+                return;
             }
+
+            Debug.Log($"{Tag} ForceHost called — stopping discovery and becoming host.");
+            m_Resolved = true;
+            StopDiscoveryAndBecomeHost();
         }
 
         void OnMessageDiscovered(object sender, ColocationDiscoveryMessage message)
@@ -114,6 +153,7 @@ namespace NulabCup.Networking
 
         void BecomeHost()
         {
+            StartupProfiler.LogMilestone("ColocationBridge", "BecomeHost BEGIN");
             var sessionName = SessionPrefix + Guid.NewGuid().ToString("N").Substring(0, 8);
             Debug.Log($"{Tag} Creating session as host: {sessionName}");
 
