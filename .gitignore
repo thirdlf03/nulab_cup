@@ -100,3 +100,13 @@ InitTestScene*.unity*
 
 # Burst debug information
 *_BurstDebugInformation_DoNotShip/
+.DS_Store
+
+.vscode/
+*.slnx
+
+# Wit.ai config (contains access tokens)
+Assets/wit.asset
+Assets/wit.asset.meta
+ProjectSettings/wit.config
+ProjectSettings/WitConfigExports/
